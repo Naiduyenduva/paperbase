@@ -2,3 +2,4 @@
 /dist
 /data/*.json
 .env
+/src/generated/prisma
