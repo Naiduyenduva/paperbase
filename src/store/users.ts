@@ -1,5 +1,5 @@
-import { promises as fs } from "node:fs";
-import path from "node:path";
+import { Prisma } from "../generated/prisma/client.js";
+import { prisma } from "../lib/prisma.js";
 
 export interface User {
   id: string;
@@ -9,49 +9,62 @@ export interface User {
   createdAt: string;
 }
 
-const dataDirectory = path.resolve(process.cwd(), "data");
-const usersFile = path.join(dataDirectory, "users.json");
-
-async function readUsers(): Promise<User[]> {
-  await fs.mkdir(dataDirectory, { recursive: true });
-
-  try {
-    const content = await fs.readFile(usersFile, "utf8");
-    return JSON.parse(content) as User[];
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      await fs.writeFile(usersFile, "[]", "utf8");
-      return [];
-    }
-    throw error;
-  }
-}
-
-async function writeUsers(users: User[]): Promise<void> {
-  await fs.mkdir(dataDirectory, { recursive: true });
-  await fs.writeFile(usersFile, JSON.stringify(users, null, 2), "utf8");
+function toUser(user: {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  createdAt: Date;
+}): User {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    passwordHash: user.passwordHash,
+    createdAt: user.createdAt.toISOString(),
+  };
 }
 
 export async function findUserByEmail(
   email: string,
 ): Promise<User | undefined> {
-  const users = await readUsers();
-  return users.find((user) => user.email === email);
+  const user = await prisma.user.findUnique({ where: { email } });
+  return user ? toUser(user) : undefined;
 }
 
 export async function findUserById(id: string): Promise<User | undefined> {
-  const users = await readUsers();
-  return users.find((user) => user.id === id);
+  const user = await prisma.user.findUnique({ where: { id } });
+  return user ? toUser(user) : undefined;
 }
 
 export async function createUser(user: User): Promise<User> {
-  const users = await readUsers();
+  try {
+    const createdUser = await prisma.user.create({
+      data: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        passwordHash: user.passwordHash,
+        createdAt: new Date(user.createdAt),
+      },
+    });
+    return toUser(createdUser);
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const target = error.meta?.target;
+      const emailConflict = Array.isArray(target)
+        ? target.includes("email")
+        : target === "email" ||
+          (typeof target === "string" && target.includes("email"));
 
-  if (users.some((existingUser) => existingUser.email === user.email)) {
-    throw new Error("EMAIL_ALREADY_EXISTS");
+      if (emailConflict) {
+        throw new Error("EMAIL_ALREADY_EXISTS");
+      }
+    }
+
+    throw error;
   }
-
-  users.push(user);
-  await writeUsers(users);
-  return user;
 }
