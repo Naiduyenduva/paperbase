@@ -11,6 +11,7 @@ import {
   signUpSchema,
   verifyToken,
 } from "./auth/auth.js";
+import documentsRouter from "./documents/documents.js";
 
 const app = express();
 
@@ -98,6 +99,8 @@ app.get(
     }
   },
 );
+
+app.use("/api/documents", documentsRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Route not found" });
